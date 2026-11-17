@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Exercise a real Jellyfin 12.4 process on loopback with generated, disposable media.
 
-Usage: python3 scripts/smoke-test.py --dotnet /path/to/dotnet --server /path/to/jellyfin.dll
-Requires ffmpeg on PATH. Never connects to an existing Jellyfin server.
+Run scripts/package.py first, then pass --server /path/to/jellyfin.dll.
+Requires ffmpeg on PATH. Installs from a loopback catalog into a disposable server.
 """
 import argparse
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -13,35 +15,63 @@ import shutil
 import socket
 import subprocess
 import tempfile
+from threading import Thread
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
 
+class CatalogHandler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/latest/download/manifest.json':
+            self.send_response(302)
+            self.send_header('Location', '/manifest.json')
+            self.end_headers()
+        else:
+            super().do_GET()
+
+    def log_message(self, *args):
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dotnet', default='dotnet')
     parser.add_argument('--server', required=True)
+    parser.add_argument('--legacy-dll', type=Path, help='Also test upgrading a manually installed Series Audio 0.4.0')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    dll = root / 'src/Jellyfin.Plugin.SeriesAudio/bin/Release/net10.0/Jellyfin.Plugin.SeriesAudio.dll'
-    assert dll.exists(), 'Build the plugin first'
+    artifacts = root / 'artifacts'
+    manifest = json.loads((artifacts / 'manifest.json').read_text())
+    version = manifest[0]['versions'][0]
+    archive = artifacts / version['sourceUrl'].rsplit('/', 1)[-1]
     with tempfile.TemporaryDirectory(prefix='series-audio-smoke-') as directory:
         work = Path(directory)
-        for name in ['data', 'config', 'cache', 'logs', 'media']:
+        for name in ['data', 'config', 'cache', 'logs', 'media', 'web', 'catalog']:
             (work / name).mkdir()
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0))
             port = sock.getsockname()[1]
         (work / 'config/network.xml').write_text(f'''<NetworkConfiguration>
 <InternalHttpPort>{port}</InternalHttpPort><PublicHttpPort>{port}</PublicHttpPort>
+<BaseUrl>/jellyfin</BaseUrl>
 <EnableIPv4>true</EnableIPv4><EnableIPv6>false</EnableIPv6><EnableRemoteAccess>false</EnableRemoteAccess>
 <EnableUPnP>false</EnableUPnP><LocalNetworkAddresses><string>127.0.0.1</string></LocalNetworkAddresses>
 </NetworkConfiguration>''')
-        plugin_dir = work / 'data/plugins/SeriesAudio_0.4.0.0'
-        plugin_dir.mkdir(parents=True)
-        shutil.copy2(dll, plugin_dir / dll.name)
+        web_index = work / 'web/index.html'
+        original_html = b'<!doctype html><html><body>Jellyfin</body></html>'
+        web_index.write_bytes(original_html)
+        web_index.chmod(0o444)
+        (work / 'web/asset.js').write_text('window.fixture = true;')
+        if args.legacy_dll:
+            legacy = work / 'data/plugins/SeriesAudio_0.4.0.0/Jellyfin.Plugin.SeriesAudio.dll'
+            legacy.parent.mkdir(parents=True)
+            shutil.copy2(args.legacy_dll, legacy)
+            preferences = work / 'data/data/series-audio/preferences.json'
+            preferences.parent.mkdir(parents=True)
+            preferences.write_text('{"season/test/legacy":{"title":"Previous Studio","language":"rus"}}')
+            original_preferences = preferences.read_bytes()
         season = work / 'media/Audio Fixture/Season 01'
         season.mkdir(parents=True)
         fixture = [
@@ -67,8 +97,8 @@ def main():
             folder = season if season_number == 1 else season.parent
             command += ['-y', str(folder / f'Audio Fixture S{season_number:02}E{episode:02}.mkv')]
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
-        base = f'http://127.0.0.1:{port}'
-        identity = 'MediaBrowser Client="SeriesAudioSmoke", Device="LocalTest", DeviceId="series-audio-smoke", Version="0.4.0"'
+        base = f'http://127.0.0.1:{port}/jellyfin'
+        identity = 'MediaBrowser Client="SeriesAudioSmoke", Device="LocalTest", DeviceId="series-audio-smoke", Version="1.0"'
         token = None
 
         def api(path, method='GET', data=None, expected=200, auth=True):
@@ -86,7 +116,7 @@ def main():
                 return json.loads(body) if body else None
             return body
 
-        command = [args.dotnet, args.server, '--nowebclient', '--nonetchange', '--datadir', str(work / 'data'), '--configdir', str(work / 'config'), '--cachedir', str(work / 'cache'), '--logdir', str(work / 'logs'), '--ffmpeg', shutil.which('ffmpeg')]
+        command = [args.dotnet, args.server, '--webdir', str(work / 'web'), '--nonetchange', '--datadir', str(work / 'data'), '--configdir', str(work / 'config'), '--cachedir', str(work / 'cache'), '--logdir', str(work / 'logs'), '--ffmpeg', shutil.which('ffmpeg')]
         log = open(work / 'server.log', 'wb')
         process = None
 
@@ -111,9 +141,17 @@ def main():
                     process.kill()
                     process.wait()
 
+        catalog = ThreadingHTTPServer(('127.0.0.1', 0), partial(CatalogHandler, directory=work / 'catalog'))
+        catalog_base = f'http://127.0.0.1:{catalog.server_port}'
+        catalog_url = catalog_base + '/latest/download/manifest.json'
+        version['sourceUrl'] = f'{catalog_base}/{archive.name}'
+        (work / 'catalog/manifest.json').write_text(json.dumps(manifest))
+        shutil.copy2(archive, work / 'catalog')
+        catalog_thread = Thread(target=catalog.serve_forever, daemon=True)
+        catalog_thread.start()
         try:
             start()
-            print('PASS: Jellyfin 12.4 starts with plugin', flush=True)
+            assert api('/web/index.html', auth=False) == original_html
             api('/Startup/User')
             password = secrets.token_urlsafe(24)
             api('/Startup/User', 'POST', {'Name': 'smoke-admin', 'Password': password}, 204)
@@ -121,8 +159,31 @@ def main():
             login = api('/Users/AuthenticateByName', 'POST', {'Username': 'smoke-admin', 'Pw': password})
             token = login['AccessToken']
             admin_id = login['User']['Id']
-            assert any(p['Name'] == 'Series Audio' for p in api('/Plugins')), 'Plugin not loaded'
+            api('/Repositories', 'POST', [{'Name': 'Series Audio', 'Url': catalog_url, 'Enabled': True}], 204)
+            package = api('/Packages/Series%20Audio')
+            assert package['guid'].replace('-', '').lower() == manifest[0]['guid'].replace('-', '')
+            api('/Packages/Installed/Series%20Audio?' + urllib.parse.urlencode({'repositoryUrl': catalog_url}), 'POST', expected=204)
+            stop()
+            start()
+            active = [p['Version'] for p in api('/Plugins') if p['Name'] == 'Series Audio' and p['Status'] == 'Active']
+            assert active == [version['version']], active
+            if args.legacy_dll:
+                assert preferences.read_bytes() == original_preferences
+            print('PASS: Jellyfin installs Series Audio from its plugin catalog and loads it after restart', flush=True)
+            markup = b'<script id="series-audio-script" defer src="../SeriesAudio/web.js"></script>'
+            for path in ('/web/', '/web/index.html'):
+                request = urllib.request.Request(base + path, headers={
+                    'Accept-Encoding': 'gzip, br', 'If-Modified-Since': 'Fri, 01 Jan 2100 00:00:00 GMT', 'Range': 'bytes=0-8'
+                })
+                with urllib.request.urlopen(request, timeout=20) as response:
+                    body = response.read()
+                    assert body.count(markup) == 1, body
+                    assert int(response.headers['Content-Length']) == len(body)
+                    assert response.headers['Cache-Control'] == 'no-store'
+            assert web_index.read_bytes() == original_html
+            assert api('/web/asset.js', auth=False) == b'window.fixture = true;'
             assert b'Series Audio' in api('/SeriesAudio/web.js', auth=False)
+            print('PASS: panel loads under a base URL without changing the read-only web files', flush=True)
             api('/SeriesAudio/Season/00000000000000000000000000000001', auth=False, expected=401)
             api('/Library/VirtualFolders?' + urllib.parse.urlencode({'name': 'Audio Test', 'collectionType': 'tvshows', 'refreshLibrary': 'true'}), 'POST', {
                 'LibraryOptions': {'PathInfos': [{'Path': str(work / 'media')}], 'EnableInternetProviders': False, 'EnableRealtimeMonitor': False,
@@ -231,6 +292,9 @@ def main():
             raise
         finally:
             stop()
+            catalog.shutdown()
+            catalog.server_close()
+            catalog_thread.join()
             log.close()
 
 

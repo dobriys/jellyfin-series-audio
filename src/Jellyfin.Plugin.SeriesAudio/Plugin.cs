@@ -11,6 +11,6 @@ public sealed class Plugin(IApplicationPaths paths, IXmlSerializer serializer)
     : BasePlugin<PluginConfiguration>(paths, serializer)
 {
     public override string Name => "Series Audio";
-    public override string Description => "Озвучка сезона для каждого пользователя, общая для устройств.";
+    public override string Description => "Choose a preferred audio track per TV season and Jellyfin profile.";
     public override Guid Id => Guid.Parse("f8f6c53c-43c2-4448-a56c-e6d6a18436b4");
 }

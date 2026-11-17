@@ -2,6 +2,7 @@ using MediaBrowser.Controller;
 using MediaBrowser.Controller.Events;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Plugins;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -11,6 +12,7 @@ public sealed class ServiceRegistrator : IPluginServiceRegistrator
 {
     public void RegisterServices(IServiceCollection services, IServerApplicationHost applicationHost)
     {
+        services.AddSingleton<IStartupFilter, WebPanelStartupFilter>();
         services.AddSingleton(sp => new PreferenceStore(
             Path.Combine(sp.GetRequiredService<IServerApplicationPaths>().DataPath, "series-audio", "preferences.json"),
             sp.GetRequiredService<ILogger<PreferenceStore>>()));

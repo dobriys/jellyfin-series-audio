@@ -4,8 +4,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>0.4.0</Version>
-    <AssemblyVersion>0.4.0.0</AssemblyVersion>
+    <Version>0.5.0</Version>
+    <AssemblyVersion>0.5.0.0</AssemblyVersion>
     <Description>Per-user, per-season audio preferences for Jellyfin 12.4</Description>
     <RepositoryUrl>https://github.com/dobriys/jellyfin-series-audio</RepositoryUrl>
   </PropertyGroup>

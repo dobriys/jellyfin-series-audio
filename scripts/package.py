@@ -1,31 +1,47 @@
 #!/usr/bin/env python3
-"""Package the already-built DLL with installation instructions, without host dependencies."""
+"""Build the Jellyfin catalog archive and its GitHub Releases manifest."""
+from datetime import datetime, timezone
 from pathlib import Path
+from xml.etree import ElementTree
 import hashlib
 import json
-import shutil
 import zipfile
 
 root = Path(__file__).resolve().parents[1]
-output = root / 'artifacts/SeriesAudio-0.4.0-jellyfin-12.4'
-output.mkdir(parents=True, exist_ok=True)
-files = {
-    'Jellyfin.Plugin.SeriesAudio.dll': root / 'src/Jellyfin.Plugin.SeriesAudio/bin/Release/net10.0/Jellyfin.Plugin.SeriesAudio.dll',
-    'install.py': root / 'scripts/install.py',
-    '99-series-audio.sh': root / 'scripts/99-series-audio.sh',
-    'docs/INSTALL.md': root / 'docs/INSTALL.md',
-    'docs/TV-CHECKLIST.md': root / 'docs/TV-CHECKLIST.md',
-    'README.md': root / 'README.md',
-}
-for name, source in files.items():
-    (output / name).parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, output / name)
-checksums = {name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in files}
-(output / 'checksums.json').write_text(json.dumps(checksums, indent=2) + '\n')
-archive = Path(str(output) + '.zip')
+project = root / 'src/Jellyfin.Plugin.SeriesAudio'
+settings = ElementTree.parse(project / 'Jellyfin.Plugin.SeriesAudio.csproj')
+version = settings.findtext('./PropertyGroup/Version')
+assembly_version = settings.findtext('./PropertyGroup/AssemblyVersion')
+abi = settings.find("./ItemGroup/PackageReference[@Include='Jellyfin.Controller']").attrib['Version']
+framework = settings.findtext('./PropertyGroup/TargetFramework')
+dll = project / 'bin/Release' / framework / 'Jellyfin.Plugin.SeriesAudio.dll'
+
+output = root / 'artifacts'
+output.mkdir(exist_ok=True)
+archive = output / f'SeriesAudio-{version}-jellyfin-12.4.zip'
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
-    for name in [*files, 'checksums.json']:
-        bundle.write(output / name, f'{output.name}/{name}')
+    bundle.writestr(zipfile.ZipInfo(dll.name), dll.read_bytes(), compress_type=zipfile.ZIP_DEFLATED)
 with zipfile.ZipFile(archive) as bundle:
     assert bundle.testzip() is None
+
+release = f'https://github.com/dobriys/jellyfin-series-audio/releases/download/v{version}'
+manifest = [{
+    'guid': 'f8f6c53c-43c2-4448-a56c-e6d6a18436b4',
+    'name': 'Series Audio',
+    'description': 'Choose a preferred audio track per TV season and Jellyfin profile.',
+    'overview': 'Season audio preferences for Jellyfin Web',
+    'owner': 'dobriys',
+    'category': 'General',
+    'versions': [{
+        'version': assembly_version,
+        'targetAbi': f'{abi}.0',
+        'sourceUrl': f'{release}/{archive.name}',
+        # Jellyfin's catalog installer expects an MD5 checksum of the ZIP.
+        'checksum': hashlib.md5(archive.read_bytes(), usedforsecurity=False).hexdigest(),
+        'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'changelog': f'Series Audio {version}. See the GitHub release notes for details.',
+    }],
+}]
+(output / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
 print(archive)
+print(output / 'manifest.json')

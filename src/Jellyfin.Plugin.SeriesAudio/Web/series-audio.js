@@ -1,4 +1,4 @@
-/* Series Audio 0.4.0 — loaded inside Jellyfin Web 12.4. */
+/* Series Audio 0.5.0 — loaded inside Jellyfin Web 12.4. */
 (() => {
     'use strict';
     if (window.__seriesAudioLoaded) return;

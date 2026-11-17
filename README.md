@@ -1,73 +1,43 @@
-# Jellyfin Series Audio
+# Series Audio for Jellyfin
 
-Серверный плагин и веб-дополнение для **Jellyfin Server 12.4.0**. Предпочтение хранится отдельно для каждого пользователя и сезона. Версия **0.4.0**.
+[Русский](#русский) · [English](#english)
 
-## Возможности
+## Русский
 
-- Панель «Озвучки по сезонам» на странице сериала и панель «Озвучка сезона» над списком серий в Jellyfin Web. Выбор появляется для сезонов с двумя или более вариантами. В списке дорожки из доступных эпизодов этого сезона.
-- Подпись «По умолчанию» показывает текущий серверный выбор в профиле. В сезоне с разными дорожками она перечисляет варианты по сериям. На странице серии подпись учитывает выбранную версию видео.
-- Администратор может выбрать другой профиль; обычный пользователь управляет только своим.
-- Сопоставление по исходному названию аудиодорожки и языку, независимо от её номера в эпизоде. `HDRezka Studio` и `HDRezka Studio 18+` различаются.
-- Предпочтение применяется до формирования адреса транскодирования. Если совпадения нет, сохраняется обычный выбор Jellyfin.
-- Для Jellyfin Android TV предусмотрена однократная коррекция в начале воспроизведения: клиент 0.19.10 иногда предпочитает последний язык серверному выбору. Возможна короткая задержка/перезапуск потока.
-- Сброс «Использовать настройки Jellyfin», сохранение между перезапусками сервера.
+**Series Audio** запоминает предпочитаемую аудиодорожку для каждого сезона и профиля Jellyfin. Меню добавляется на страницы сериала и сезона в Jellyfin Web. Подпись «По умолчанию» показывает, какую дорожку сервер предлагает при запуске серии.
 
-## Статус
+Сопоставление идёт по названию и языку, поэтому порядок дорожек в разных сериях может отличаться. Если нужной дорожки в серии нет, Jellyfin использует обычный выбор. Администратор может настраивать озвучку для других профилей.
 
-Код собран под официальные библиотеки Jellyfin 12.4.0 / .NET 10. Проверка на физических Android TV устройствах **ещё не выполнена**.
+### Установка из каталога
 
-Автоматические проверки охватывают подбор дорожек, отсутствие совпадения, разделение пользователей, права администратора, сохранение/сброс, однократную коррекцию Android TV и работу веб-панели. `scripts/smoke-test.py` поднимает отдельный Jellyfin 12.4 на loopback, создаёт синтетические эпизоды с переставленными дорожками и проверяет реальный API и аудиоиндексы в HLS URL.
+Требуется **Jellyfin Server 12.4.0** со встроенным Jellyfin Web.
 
-## Установка и проверка
+1. Откройте **Панель управления → Плагины → Репозитории** и добавьте репозиторий **Series Audio**.
 
-См. [инструкцию для LinuxServer / Docker / Portainer](docs/INSTALL.md) и [план проверки на телевизоре](docs/TV-CHECKLIST.md).
+   ```text
+   https://github.com/dobriys/jellyfin-series-audio/releases/latest/download/manifest.json
+   ```
 
-## Ограничения
+2. Откройте **Каталог**, найдите **Series Audio** и нажмите **Установить**.
+3. Перезапустите сервер Jellyfin, обновите страницу в браузере и откройте сериал. Настройки находятся в блоке **«Озвучки по сезонам»**.
 
-- Совместимость зафиксирована на Jellyfin 12.4.0; после обновления сервера нужна повторная проверка.
-- Проверен код Android TV **0.19.10**, но доставка команды и её выполнение телевизором требуют живого теста. Для других клиентов гарантируется хранение настройки, а применение зависит от того, учитывают ли они серверный default.
-- Ручной выбор в плеере **не сохраняется как новая настройка сезона**. После начальной коррекции плагин не переключает дорожку обратно. Нативная кнопка на телевизоре в эту версию не входит.
-- Совпадение названий строгое после нормализации регистра и пробелов: `Dub | Red Head Sound` и `Red Head Sound` пока разные названия. Это защищает от ложного выбора похожей озвучки. Отдельные правила синонимов не реализованы.
-- Для дорожки без названия показывается полное название языка. Дорожки без названия и языка, а также безымянные дорожки с неоднозначным совпадением исключаются из списка.
-- Если клиент явно передал номер аудиодорожки при запуске, он может переопределить серверный default. Android TV использует стартовую коррекцию; другие приложения — штатное поведение.
-- Список выбора собирается по всем доступным эпизодам сезона. Предпочтение применяется и к эпизодам, добавленным в этот сезон позднее.
-- Настройки субтитров не изменяются. Если озвучка меняет язык аудио, автоматический режим субтитров следует отдельно проверить.
-- Веб-дополнение рассчитано на стандартную страницу `.itemDetailPage` Jellyfin Web 12.4. Другие темы/клиенты могут потребовать адаптации.
+**Переход с ручной установки 0.4.0 и более ранних версий.** Установите новую версию из каталога. Если раньше подключали скрипт `/custom-cont-init.d/99-series-audio`, удалите его подключение и один раз пересоздайте контейнер с тем же образом Jellyfin. Настройки сезонов из 0.2.0–0.4.0 хранятся в каталоге данных Jellyfin и сохраняются при обновлении.
 
-## Разработка
+## English
 
-```sh
-dotnet test tests/SeriesAudio.Tests -c Release
-npm ci --ignore-scripts
-npm test
-python3 scripts/package.py
-```
+**Series Audio** remembers the preferred audio track for each TV season and Jellyfin profile. Jellyfin Web adds controls to series and season pages and shows the server's default audio track on episode pages. The plugin matches tracks by title and language, so their order can vary between episodes. Jellyfin uses its usual selection when the preferred track is missing. Administrators can manage preferences for other profiles. The plugin controls currently use Russian labels.
 
-Для интеграционного теста соберите исходники официального тега `jellyfin/jellyfin:v12.4`, установите FFmpeg и выполните:
+### Install from the catalog
 
-```sh
-python3 scripts/smoke-test.py --server /path/to/Jellyfin.Server/bin/Release/net10.0/jellyfin.dll
-```
+Requires **Jellyfin Server 12.4.0** with its built-in Jellyfin Web client.
 
-Все данные тестового сервера создаются во временной папке и удаляются после завершения. Он слушает только `127.0.0.1`, не подключается к существующему серверу и использует сгенерированные видео. При ошибке локально сохраняется журнал в `artifacts/`, исключённом из Git.
+1. Open **Dashboard → Plugins → Repositories** and add the **Series Audio** repository.
 
-## Устройство
+   ```text
+   https://github.com/dobriys/jellyfin-series-audio/releases/latest/download/manifest.json
+   ```
 
-`PreferredMediaSources` оборачивает `IMediaSourceManager`, клонирует только изменяемые источники и выставляет `DefaultAudioStreamIndex` / `AudioIndexSource.User` до `StreamBuilder`. Это сохраняет выбранную озвучку при создании HLS URL. Общие объекты источников и пользовательские данные Jellyfin не переписываются.
+2. Open **Catalog**, select **Series Audio**, then click **Install**.
+3. Restart Jellyfin, refresh the browser, and open a series. Look for **«Озвучки по сезонам»** (Audio by season).
 
-`PreferenceStore` атомарно сохраняет небольшой JSON в `<Jellyfin DataPath>/series-audio/preferences.json`. Нечитаемый файл не перезаписывается: воспроизведение использует обычные настройки, а запись блокируется с сообщением в журнале.
-
-`StartupAudioCorrection` слушает события начала/прогресса только для Android TV с поддержкой `SetAudioStreamIndex`. Он ждёт конкретного источника и аудиоиндекса, отправляет не более одной команды в начале сеанса и подавляет повторные старты того же источника в течение 30 секунд. Отправленная команда не считается подтверждением фактического переключения.
-
-`SeriesAudioController` использует штатную авторизацию Jellyfin, проверяет права на профиль и доступ к сезону и эпизоду. Сохраняется название дорожки, прочитанное сервером из выбранного источника, а не произвольный текст клиента. Публичный `/SeriesAudio/web.js` содержит только код; данные предпочтений требуют входа.
-
-## Проверенные исходники
-
-Проверено 17 ноября 2026 года:
-
-- [Jellyfin 12.4 — MediaSourceManager](https://github.com/jellyfin/jellyfin/blob/v12.4/Emby.Server.Implementations/Library/MediaSourceManager.cs)
-- [Jellyfin 12.4 — MediaInfoHelper](https://github.com/jellyfin/jellyfin/blob/v12.4/Jellyfin.Api/Helpers/MediaInfoHelper.cs)
-- [Jellyfin 12.4 — StreamBuilder](https://github.com/jellyfin/jellyfin/blob/v12.4/MediaBrowser.Model/Dlna/StreamBuilder.cs)
-- [Android TV 0.19.10 — выбор аудио](https://github.com/jellyfin/jellyfin-androidtv/blob/v0.19.10/app/src/main/java/org/jellyfin/androidtv/ui/playback/PlaybackController.java)
-- [Android TV 0.19.10 — команды переключения](https://github.com/jellyfin/jellyfin-androidtv/blob/v0.19.10/app/src/main/java/org/jellyfin/androidtv/data/eventhandling/SocketHandler.kt)
-- [LinuxServer — пути запуска Jellyfin](https://github.com/linuxserver/docker-jellyfin/blob/master/root/etc/s6-overlay/s6-rc.d/svc-jellyfin/run)
+**Migrating from a manual installation of 0.4.0 or earlier.** Install the new version from the catalog. If you mounted `/custom-cont-init.d/99-series-audio`, remove that mount and recreate the container once with the same Jellyfin image. Season preferences from 0.2.0–0.4.0 are stored in Jellyfin's data directory and carry over.
