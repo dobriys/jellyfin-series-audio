@@ -11,8 +11,12 @@ public sealed record AudioPreference(
 
 public static partial class AudioMatcher
 {
-    public static string NormalizeTitle(string? value) => Whitespace().Replace(
-        (value ?? "").Normalize(NormalizationForm.FormKC).Trim(), " ").ToLowerInvariant();
+    private static string NormalizeTitle(string? value) => Whitespace().Replace(
+        (value ?? "").Normalize(NormalizationForm.FormKC).Trim(), " ").ToLowerInvariant() switch
+        {
+            "unknown" or "und" or "неизвестно" or "без названия" => "",
+            var title => title
+        };
 
     public static string NormalizeLanguage(string? value) => (value ?? "").Trim().ToLowerInvariant() switch
     {
@@ -20,11 +24,12 @@ public static partial class AudioMatcher
         "en" or "eng" => "eng",
         "uk" or "ukr" => "ukr",
         "he" or "heb" => "heb",
+        "und" or "unknown" or "zxx" => "",
         var language => language
     };
 
     public static AudioPreference FromStream(MediaStream stream) =>
-        new((stream.Title ?? "").Trim(), NormalizeLanguage(stream.Language));
+        new(NormalizeTitle(stream.Title).Length == 0 ? "" : stream.Title.Trim(), NormalizeLanguage(stream.Language));
 
     public static string Key(AudioPreference preference) =>
         NormalizeLanguage(preference.Language) + "\n" + NormalizeTitle(preference.Title);

@@ -30,20 +30,20 @@ public sealed class PreferenceStore
         }
     }
 
-    public AudioPreference? Get(Guid userId, Guid seriesId)
+    public AudioPreference? Get(Guid userId, Guid seasonId)
     {
-        lock (_gate) return _preferences.GetValueOrDefault(Key(userId, seriesId));
+        lock (_gate) return _preferences.GetValueOrDefault(Key(userId, seasonId));
     }
 
-    public void Set(Guid userId, Guid seriesId, AudioPreference? preference)
+    public void Set(Guid userId, Guid seasonId, AudioPreference? preference)
     {
-        if (userId == Guid.Empty || seriesId == Guid.Empty) throw new ArgumentException("User and series are required");
+        if (userId == Guid.Empty || seasonId == Guid.Empty) throw new ArgumentException("User and season are required");
         lock (_gate)
         {
             if (_unreadable) throw new InvalidOperationException("Файл предпочтений не читается. Восстановите его из резервной копии и перезапустите сервер.");
             var updated = new Dictionary<string, AudioPreference>(_preferences);
-            if (preference is null) updated.Remove(Key(userId, seriesId));
-            else updated[Key(userId, seriesId)] = preference;
+            if (preference is null) updated.Remove(Key(userId, seasonId));
+            else updated[Key(userId, seasonId)] = preference;
 
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -64,5 +64,5 @@ public sealed class PreferenceStore
         }
     }
 
-    private static string Key(Guid userId, Guid seriesId) => $"{userId:N}/{seriesId:N}";
+    private static string Key(Guid userId, Guid seasonId) => $"season/{userId:N}/{seasonId:N}";
 }

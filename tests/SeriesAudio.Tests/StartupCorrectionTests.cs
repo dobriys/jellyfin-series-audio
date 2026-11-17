@@ -16,7 +16,7 @@ public sealed class StartupCorrectionTests : IDisposable
     private readonly Mock<ISessionManager> _sessions = new();
     private readonly Mock<IMediaSourceManager> _sources = new();
     private readonly StartupAudioCorrection _correction;
-    private readonly Episode _episode = new() { Id = Guid.NewGuid(), SeriesId = Guid.NewGuid() };
+    private readonly Episode _episode = new() { Id = Guid.NewGuid(), SeasonId = Guid.NewGuid() };
     private readonly SessionInfo _session;
 
     public StartupCorrectionTests()
@@ -28,7 +28,7 @@ public sealed class StartupCorrectionTests : IDisposable
             Capabilities = new ClientCapabilities { SupportedCommands = [GeneralCommandType.SetAudioStreamIndex] },
             PlayState = new PlayerStateInfo { AudioStreamIndex = 1, MediaSourceId = "s" }
         };
-        store.Set(_session.UserId, _episode.SeriesId, new("TVShows", "rus"));
+        store.Set(_session.UserId, _episode.SeasonId, new("TVShows", "rus"));
         _sources.Setup(x => x.GetStaticMediaSources(_episode, false, null!)).Returns([
             new MediaSourceInfo { Id = "s", MediaStreams = [PreferenceTests.Audio(1, "HDRezka Studio"), PreferenceTests.Audio(5, "TVShows")] }
         ]);

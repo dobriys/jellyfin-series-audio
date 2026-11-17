@@ -7,7 +7,7 @@ import shutil
 import zipfile
 
 root = Path(__file__).resolve().parents[1]
-output = root / 'artifacts/SeriesAudio-0.1.0-jellyfin-12.4'
+output = root / 'artifacts/SeriesAudio-0.4.0-jellyfin-12.4'
 output.mkdir(parents=True, exist_ok=True)
 files = {
     'Jellyfin.Plugin.SeriesAudio.dll': root / 'src/Jellyfin.Plugin.SeriesAudio/bin/Release/net10.0/Jellyfin.Plugin.SeriesAudio.dll',

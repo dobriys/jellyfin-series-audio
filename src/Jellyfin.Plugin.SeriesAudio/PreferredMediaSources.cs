@@ -17,8 +17,8 @@ public sealed class PreferredMediaSources(IMediaSourceManager inner, PreferenceS
 {
     public IReadOnlyList<MediaSourceInfo> Apply(BaseItem item, User? user, IReadOnlyList<MediaSourceInfo> sources)
     {
-        if (user is null || item is not Episode episode) return sources;
-        var preference = preferences.Get(user.Id, episode.SeriesId);
+        if (user is null || item is not Episode episode || episode.SeasonId == Guid.Empty) return sources;
+        var preference = preferences.Get(user.Id, episode.SeasonId);
         if (preference is null) return sources;
 
         return sources.Select(source =>

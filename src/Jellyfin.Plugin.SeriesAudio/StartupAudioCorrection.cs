@@ -28,8 +28,9 @@ public sealed class StartupAudioCorrection(
         foreach (var pair in _pending.Where(p => p.Value.Expires < now)) _pending.TryRemove(pair.Key, out _);
         foreach (var pair in _attempts.Where(p => p.Value < now)) _attempts.TryRemove(pair.Key, out _);
         if (e.Session is null || e.Item is not Episode episode
+            || episode.SeasonId == Guid.Empty
             || e.Session.Client?.Contains("Android TV", StringComparison.OrdinalIgnoreCase) != true
-            || preferences.Get(e.Session.UserId, episode.SeriesId) is null) return;
+            || preferences.Get(e.Session.UserId, episode.SeasonId) is null) return;
 
         if (!e.Session.SupportedCommands.Contains(GeneralCommandType.SetAudioStreamIndex))
         {
@@ -58,7 +59,7 @@ public sealed class StartupAudioCorrection(
         if (session.PlayState.AudioStreamIndex is not int actual || string.IsNullOrWhiteSpace(pending.SourceId)) return;
         if (!_pending.TryRemove(new KeyValuePair<string, Pending>(session.Id, pending))) return;
         if (e.Item is not Episode episode) return;
-        var preference = preferences.Get(session.UserId, episode.SeriesId);
+        var preference = preferences.Get(session.UserId, episode.SeasonId);
         if (preference is null) return;
         var source = sources.GetStaticMediaSources(episode, false)
             .FirstOrDefault(s => s.Id.Equals(pending.SourceId, StringComparison.OrdinalIgnoreCase));

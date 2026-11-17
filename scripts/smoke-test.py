@@ -39,25 +39,36 @@ def main():
 <EnableIPv4>true</EnableIPv4><EnableIPv6>false</EnableIPv6><EnableRemoteAccess>false</EnableRemoteAccess>
 <EnableUPnP>false</EnableUPnP><LocalNetworkAddresses><string>127.0.0.1</string></LocalNetworkAddresses>
 </NetworkConfiguration>''')
-        plugin_dir = work / 'data/plugins/SeriesAudio_0.1.0.0'
+        plugin_dir = work / 'data/plugins/SeriesAudio_0.4.0.0'
         plugin_dir.mkdir(parents=True)
         shutil.copy2(dll, plugin_dir / dll.name)
         season = work / 'media/Audio Fixture/Season 01'
         season.mkdir(parents=True)
-        for episode, titles in [(1, ['Default Studio', 'Preferred Studio']), (2, ['Preferred Studio', 'Default Studio']), (3, ['Default Studio'])]:
+        fixture = [
+            (1, 1, [('Default Studio', 'rus'), ('Preferred Studio', 'rus'), ('Unknown', 'eng'),
+                    ('Unknown', 'und'), ('Unknown', 'rus'), ('', 'rus')]),
+            (1, 2, [('Preferred Studio', 'rus'), ('Default Studio', 'rus')]),
+            (1, 3, [('Default Studio', 'rus')]),
+            (2, 1, [('Season Two Studio', 'jpn'), ('Preferred Studio', 'rus')]),
+            (3, 1, [('Only Studio', 'rus')]),
+        ]
+        for season_number, episode, tracks in fixture:
             command = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=size=160x90:rate=5']
-            for index in range(len(titles)):
+            for index in range(len(tracks)):
                 command += ['-f', 'lavfi', '-i', f'sine=frequency={440 + 220 * index}:sample_rate=48000']
             command += ['-map', '0:v']
-            for index in range(len(titles)):
+            for index in range(len(tracks)):
                 command += ['-map', f'{index + 1}:a']
             command += ['-t', '3', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac']
-            for index, title in enumerate(titles):
-                command += [f'-metadata:s:a:{index}', f'title={title}', f'-metadata:s:a:{index}', 'language=rus']
-            command += ['-y', str(season / f'Audio Fixture S01E{episode:02}.mkv')]
+            for index, (title, language) in enumerate(tracks):
+                command += [f'-metadata:s:a:{index}', f'title={title}', f'-metadata:s:a:{index}', f'language={language}']
+            default_index = 1 if (season_number, episode) == (1, 2) else 0
+            command += [f'-disposition:a:{default_index}', 'default']
+            folder = season if season_number == 1 else season.parent
+            command += ['-y', str(folder / f'Audio Fixture S{season_number:02}E{episode:02}.mkv')]
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
         base = f'http://127.0.0.1:{port}'
-        identity = 'MediaBrowser Client="SeriesAudioSmoke", Device="LocalTest", DeviceId="series-audio-smoke", Version="0.1.0"'
+        identity = 'MediaBrowser Client="SeriesAudioSmoke", Device="LocalTest", DeviceId="series-audio-smoke", Version="0.4.0"'
         token = None
 
         def api(path, method='GET', data=None, expected=200, auth=True):
@@ -112,27 +123,55 @@ def main():
             admin_id = login['User']['Id']
             assert any(p['Name'] == 'Series Audio' for p in api('/Plugins')), 'Plugin not loaded'
             assert b'Series Audio' in api('/SeriesAudio/web.js', auth=False)
-            api('/SeriesAudio/Series/00000000000000000000000000000001', auth=False, expected=401)
+            api('/SeriesAudio/Season/00000000000000000000000000000001', auth=False, expected=401)
             api('/Library/VirtualFolders?' + urllib.parse.urlencode({'name': 'Audio Test', 'collectionType': 'tvshows', 'refreshLibrary': 'true'}), 'POST', {
                 'LibraryOptions': {'PathInfos': [{'Path': str(work / 'media')}], 'EnableInternetProviders': False, 'EnableRealtimeMonitor': False,
                     'TypeOptions': [{'Type': kind, 'MetadataFetchers': [], 'ImageFetchers': []} for kind in ['Series', 'Season', 'Episode']]}
             }, 204)
             deadline = time.monotonic() + 60
+            retry_scan_at = time.monotonic() + 12
             episodes = []
             while time.monotonic() < deadline:
-                episodes = api(f'/Items?userId={admin_id}&recursive=true&includeItemTypes=Episode&fields=MediaSources,MediaStreams&sortBy=IndexNumber')['Items']
-                if len(episodes) == 3 and all(e.get('MediaSources') and e['MediaSources'][0].get('MediaStreams') for e in episodes): break
+                episodes = api(f'/Items?userId={admin_id}&recursive=true&includeItemTypes=Episode&fields=MediaSources,MediaStreams&sortBy=ParentIndexNumber,IndexNumber')['Items']
+                if len(episodes) == len(fixture) and all(e.get('MediaSources') and e['MediaSources'][0].get('MediaStreams') for e in episodes): break
+                if retry_scan_at is not None and time.monotonic() >= retry_scan_at:
+                    api('/Library/Refresh', 'POST', expected=204)
+                    retry_scan_at = None
                 time.sleep(1)
-            assert len(episodes) == 3, 'Expected three scanned episodes'
-            series_id = episodes[0]['SeriesId']
-            route = f'/SeriesAudio/Series/{series_id}'
+            assert len(episodes) == len(fixture), f'Expected {len(fixture)} scanned episodes, got {len(episodes)}'
+            season_ids = {e['ParentIndexNumber']: e['SeasonId'] for e in episodes}
+            season_one, season_two = [f'/SeriesAudio/Season/{season_ids[n]}' for n in (1, 2)]
+            assert len(set(season_ids.values())) == 3 and len({e['SeriesId'] for e in episodes}) == 1
+            overview = f'/SeriesAudio/Series/{episodes[0]["SeriesId"]}/Seasons'
+            api(overview, auth=False, expected=401)
+            api(f'/SeriesAudio/Series/{episodes[0]["Id"]}/Seasons', expected=404)
+            route = season_one
             choices = api(route)
+            assert 'preference' not in choices or choices['preference'] is None
+            assert choices['defaults'] == [{'title': 'Default Studio', 'language': 'rus'}], choices
+            assert {(c['preference']['title'], c['preference']['language']) for c in choices['choices']} == {
+                ('Default Studio', 'rus'), ('Preferred Studio', 'rus'), ('', 'eng')
+            }, choices
+            other_choices = api(season_two)['choices']
+            assert {c['preference']['title'] for c in other_choices} == {'Season Two Studio', 'Preferred Studio'}, other_choices
+            rows = api(overview)
+            assert [row['id'].replace('-', '') for row in rows] == [season_ids[n].replace('-', '') for n in (1, 2, 3)], rows
+            assert [row['audio']['choices'] for row in rows[:2]] == [choices['choices'], other_choices], rows
+            assert len(rows[2]['audio']['choices']) == 1
+            assert rows[2]['audio']['defaults'] == [{'title': 'Only Studio', 'language': 'rus'}]
+            api(f'/SeriesAudio/Season/{episodes[0]["SeriesId"]}', expected=404)
             choice = next(c for c in choices['choices'] if c['preference']['title'] == 'Preferred Studio')
             selection = {k: choice[k] for k in ['episodeId', 'mediaSourceId', 'audioStreamIndex']}
             api(route, 'PUT', {**selection, 'audioStreamIndex': -1}, 400)
             api(route, 'PUT', {**selection, 'mediaSourceId': None}, 400)
+            api(season_two, 'PUT', selection, 400)
+            foreign_choice = next(c for c in other_choices if c['preference']['title'] == 'Season Two Studio')
+            foreign_selection = {k: foreign_choice[k] for k in selection}
+            api(route, 'PUT', foreign_selection, 400)
             api(route, 'PUT', selection, 204)
-            print('PASS: authenticated selection from real scanned media', flush=True)
+            assert {t['title'] for t in api(route)['defaults']} == {'Default Studio', 'Preferred Studio'}
+            assert api(season_two).get('preference') is None
+            print('PASS: separate season catalogs, unnamed/ambiguous tracks and cross-season validation', flush=True)
 
             profile = {
                 'Name': 'Smoke HLS', 'MaxStreamingBitrate': 10000000,
@@ -146,12 +185,22 @@ def main():
                 })
                 source = result['MediaSources'][0]
                 streams = [s for s in source['MediaStreams'] if s['Type'] == 'Audio']
-                wanted = next((s for s in streams if s.get('Title') == 'Preferred Studio'), streams[0])
+                wanted = streams[0]
+                if episode['ParentIndexNumber'] == 1:
+                    wanted = next((s for s in streams if s.get('Title') == 'Preferred Studio'), wanted)
                 assert source['DefaultAudioStreamIndex'] == wanted['Index'], 'Incorrect audio after reorder/fallback'
+                details = api(f'/Users/{admin_id}/Items/{episode["Id"]}')
+                assert details['MediaSources'][0]['DefaultAudioStreamIndex'] == wanted['Index'], 'Episode page shows a different default'
                 url = source.get('TranscodingUrl', '')
                 query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
                 assert query.get('AudioStreamIndex') == [str(wanted['Index'])], 'Transcoding URL uses incorrect audio'
-            print('PASS: reordered tracks, missing studio fallback and HLS audio indices', flush=True)
+            print('PASS: reordered tracks, fallback, season isolation and HLS audio indices', flush=True)
+
+            api(season_two, 'PUT', foreign_selection, 204)
+            rows = api(overview)
+            assert [row['audio']['preference']['title'] for row in rows[:2]] == ['Preferred Studio', 'Season Two Studio']
+            assert {t['title'] for t in rows[0]['audio']['defaults']} == {'Default Studio', 'Preferred Studio'}
+            print('PASS: series, season and episode report effective defaults and per-episode fallback', flush=True)
 
             # Another profile must retain Jellyfin defaults and cannot edit the admin.
             other = api('/Users/New', 'POST', {'Name': 'smoke-viewer', 'Password': password})
@@ -159,6 +208,7 @@ def main():
             admin_token = token
             token = api('/Users/AuthenticateByName', 'POST', {'Username': 'smoke-viewer', 'Pw': password})['AccessToken']
             assert api(route).get('preference') is None
+            assert all(row['audio'].get('preference') is None for row in api(overview + f'?userId={admin_id}'))
             api(route + f'?userId={admin_id}', 'PUT', selection, 403)
             source = api(f'/Items/{episodes[0]["Id"]}/PlaybackInfo?userId={other_id}')['MediaSources'][0]
             assert source['DefaultAudioStreamIndex'] == 1, 'Preference leaked between users'
@@ -169,6 +219,8 @@ def main():
             assert api(route)['preference']['title'] == 'Preferred Studio'
             api(route, 'DELETE', expected=204)
             assert api(route).get('preference') is None
+            assert api(route)['defaults'] == [{'title': 'Default Studio', 'language': 'rus'}]
+            assert api(season_two)['preference']['title'] == 'Season Two Studio'
             print('PASS: persistence across restart and reset', flush=True)
         except Exception:
             output = root / 'artifacts/smoke-server.log'
