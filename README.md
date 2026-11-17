@@ -1,6 +1,6 @@
 # Series Audio for Jellyfin
 
-[Русский](#русский) · [English](#english)
+[Русский](#русский) · [English](#english) · [Скриншоты / Screenshots](#screenshots)
 
 ## Русский
 
@@ -37,3 +37,13 @@ Requires **Jellyfin Server 12.4.0** with its built-in Jellyfin Web client.
 
 2. Open **Catalog**, select **Series Audio**, then click **Install**.
 3. Restart Jellyfin, refresh the browser, and open a series. Look for **«Озвучки по сезонам»** (Audio by season).
+
+## Screenshots
+
+**Страница сериала / Series page**
+
+![Выбор аудиодорожки для каждого сезона / Audio track selection by season](.github/screenshots/series.png)
+
+**Страница сезона / Season page**
+
+![Сохранённая озвучка сезона над списком серий / Saved season audio preference above the episode list](.github/screenshots/season.png)
